@@ -9,6 +9,7 @@ library(RCurl)
 library("quanteda") 
 library(tidytext)
 library(plyr)
+library(rpart)
 
 link <- getURL('https://raw.githubusercontent.com/SamCD/Data607Final/master/mbti_1.csv')
 mbti <- read.csv(text = link)
@@ -85,8 +86,18 @@ resDF <- data.frame(resDF)
 count(mbtiDF,"type")
 mbtiDF$isINFP <- (mbti$type=="INFP")
 
-fit <- glm(isINFP~uniq+avgWPS+negative+positive,data=mbtiDF,family=binomial())
-predict(fit, resDF,type="response")
+set.seed(1234)
+ind <- sample(2, nrow(mbtiDF), replace=TRUE, prob=c(0.67, 0.33))
+mbtiDF$ind <- ind
+tested <- mbti$ind
+model= lm(isINFP ~ uniq+avgWPS+negative+positive, subset(mbtiDF,mbtiDF$ind==1),)
+p = predict(model, subset(mbtiDF,mbtiDF$ind!=1))
+plot(p - tested)
+model=rpart(isINFP ~ uniq+avgWPS+negative+positive, subset(mbtiDF,mbtiDF$ind==1),)
+p = predict(model, subset(mbtiDF,mbtiDF$ind!=1))
+plot(p - tested)
+#fit <- glm(isINFP~uniq+avgWPS+negative+positive,data=mbtiDF,family=binomial())
+predict(model, resDF)
 
 mbtiPlotted = ggplot(mbtiPlot, mapping = aes(x = type, fill = term)) +
   geom_bar(stat='count', position='fill') +
