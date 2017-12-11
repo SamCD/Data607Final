@@ -1,3 +1,4 @@
+#Loading required packages
 ```{r}
 library(ggplot2) # Data visualization
 library(readr)
@@ -10,8 +11,12 @@ library(RCurl)
 library("quanteda") 
 library(tidytext)
 library(plyr)
+library(rpart)
 ```
 
+#Acquiring and Preparing Data
+The first data set was pulled from Kaggle and committed to my GitHub workspace for use within this project. It is a listing of journal entries by each of the 16 different Meyers-Briggs personality types. Here I will pull the data into the workspace, separate each row into individual entries, clear out blank entries and any entries containing URLs, as we only want to do text analysis.
+```{r}
 link <- getURL('https://raw.githubusercontent.com/SamCD/Data607Final/master/mbti_1.csv')
 mbti <- read.csv(text = link)
 mbti <- mbti %>% 
@@ -20,35 +25,19 @@ mbti <- mbti %>%
 mbti <- mbti[!(is.na(mbti$posts) | mbti$posts==""), ]
 mbti$isURL <- grepl('$http',mbti$posts,TRUE)
 mbti <- subset(mbti,mbti$isURL == 0)
+```
 
-#entp <- VCorpus(VectorSource(subset(mbti,mbti$type=='ENTP' | mbti$isURL==0)$posts))
-mbtiQ <- corpus(mbti,text_field = "posts")
-mbtiDF <- tidy(mbtiQ)
-mbtiDF$ntok <- ntoken(mbtiDF$text)
-mbtiDF$ntyp <- ntype(mbtiDF$text)
-mbtiDF$uniq <- 100.0 / (mbtiDF$ntok/mbtiDF$ntyp)
-mbtiDF$avgWPS <- mbtiDF$ntok / nsentence(mbtiDF$text)
-mbtiDF <- tibble::rowid_to_column(mbti, "ID")
-
-#sentiment analysis
-mbtiS <- dfm(mbtiQ, dictionary = data_dictionary_LSD2015)
-mbtiS <- tidy(mbtiS)
-mbtiS <- mutate(mbtiS, ID = as.numeric(rownames(mbtiS)))
-mbtiN <- subset(mbtiS,mbtiS$term=="negative")
-mbtiN$document <- as.integer(mbtiN$document)
-head(mbtiDF)
-head(mbtiN)
-mbtiDF <- inner_join(mbtiDF,mbtiN,by = c("ID" = "document"))[c("ID","type","posts","count")]
-names(mbtiDF)[names(mbtiDF) == 'count'] <- 'negative'
-mbtiP <- subset(mbtiS,mbtiS$term=="positive")
-mbtiP$document <- as.integer(mbtiP$document)
-mbtiDF <- inner_join(mbtiDF,mbtiP,by = c("ID" = "document"))[c("ID","type","posts","negative","count")]
-names(mbtiDF)[names(mbtiDF) == 'count'] <- 'positive'
-mbtiDF <- data.frame(mbtiDF)
-
+Next is a manually created data set using the Google Places API. Using this tool, I will create a table consisting of review scores and text. As I only am interested in random text, I seeded the searches using a CSV listing Starbucks locations around the US, for which I randomized the order, and searched for the word "Restaurant" nearby.
+```{r}
 link2 <- getURL("https://raw.githubusercontent.com/SamCD/Data607Final/master/Starbucks.csv")
 samples <- read.csv(text = link2,header = FALSE)
+```
+*Google API Key hidden*
+```{r,echo=FALSE}
 key <- 'AIzaSyAq8j_r8PZJE2rtNTGjE4HbfMZbm7Njbxc'
+```
+
+```{r}
 resDF <- data.frame(rating = as.numeric(character()),text = character())
 samples <- samples[sample(nrow(samples)),]
 for (row in 1:nrow(head(samples),10)) {
@@ -63,8 +52,19 @@ for (row in 1:nrow(head(samples),10)) {
     resDF <- rbind(resDF,revs)
   }
 }
+```
 
-#head(resDF,15)
+#Creating corpi
+Using the ```quanteda``` package in R to create corpi and word usage matrices. I created some statistics for each entry as well, including "uniqueness" (by comparing the distinct tokens to the total number of tokens) and average sentence length.
+```{r}
+mbtiQ <- corpus(mbti,text_field = "posts")
+mbtiDF <- tidy(mbtiQ)
+mbtiDF$ntok <- ntoken(mbtiDF$text)
+mbtiDF$ntyp <- ntype(mbtiDF$text)
+mbtiDF$uniq <- 100.0 / (mbtiDF$ntok/mbtiDF$ntyp)
+mbtiDF$avgWPS <- mbtiDF$ntok / nsentence(mbtiDF$text)
+mbtiDF <- tibble::rowid_to_column(mbti, "ID")
+
 resQ <- corpus(resDF,text_field = "text")
 resDF <- tidy(resQ)
 resDF$ntok <- ntoken(resDF$text)
@@ -72,28 +72,81 @@ resDF$ntyp <- ntype(resDF$text)
 resDF$uniq <- 100.0 / (resDF$ntok/resDF$ntyp)
 resDF$avgWPS <- resDF$ntok / nsentence(resDF$text)
 resDF <- tibble::rowid_to_column(resDF, "ID")
-#sentiment analysis
+```
+
+#Performing sentiment analysis
+Quanteda has built-in dictionaries which can be used to perform sentiment analysis. I used the most simple one, splitting words into either positive or negative.
+```{r}
+mbtiS <- dfm(mbtiQ, dictionary = data_dictionary_LSD2015)
+mbtiS <- tidy(mbtiS)
+mbtiPlot <- cbind(mbtiS) # make a copy to use later
+mbtiS <- mutate(mbtiS, ID = as.numeric(rownames(mbtiS)))
+mbtiN <- subset(mbtiS,mbtiS$term=="negative")
+mbtiN$document <- as.integer(mbtiN$document)
+mbtiDF <- inner_join(mbtiDF,mbtiN,by = c("ID" = "document"))[c("ID","type","posts","count","uniq","avgWPS")]
+names(mbtiDF)[names(mbtiDF) == 'count'] <- 'negative'
+mbtiP <- subset(mbtiS,mbtiS$term=="positive")
+mbtiP$document <- as.integer(mbtiP$document)
+mbtiDF <- inner_join(mbtiDF,mbtiP,by = c("ID" = "document"))[c("ID","type","posts","negative","count","uniq","avgWPS")]
+names(mbtiDF)[names(mbtiDF) == 'count'] <- 'positive'
+mbtiDF <- data.frame(mbtiDF)
+
 resS <- dfm(resQ, dictionary = data_dictionary_LSD2015)
 resS <- tidy(resS)
+resPlot <- cbind(resS) #make a copy to use later
 resS <- mutate(resS, ID = as.numeric(rownames(resS)))
 resN <- subset(resS,resS$term=="negative")
 resN$document <- as.integer(resN$document)
-resDF <- inner_join(resDF,resN,by = c("ID" = "document"))[c("ID","rating","text","count")]
+resDF <- inner_join(resDF,resN,by = c("ID" = "document"))[c("ID","rating","text","count","uniq","avgWPS)]
 names(resDF)[names(resDF) == 'count'] <- 'negative'
 resP <- subset(resS,resS$term=="positive")
 resP$document <- as.integer(resP$document)
 resDF <- inner_join(resDF,resP,by = c("ID" = "document"))[c("ID","rating","text","negative","count")]
 names(resDF)[names(resDF) == 'count'] <- 'positive'
 resDF <- data.frame(resDF)
+```
 
+#Predictive modeling
+Instead of doing a complex analysis to determine the MBTI type, I am simplifying the classification into a boolean field, comparing the most common type (INFP) to non-INFP
+```{r}
 count(mbtiDF,"type")
 mbtiDF$isINFP <- (mbti$type=="INFP")
 
-fit <- glm(isINFP~uniq+avgWPS+negative+positive,data=mbtiDF,family=binomial())
-predict(fit, resDF,type="response")
+set.seed(1234)
+ind <- sample(2, nrow(mbtiDF), replace=TRUE, prob=c(0.67, 0.33))
+mbtiDF$ind <- ind
+tested <- mbti$ind
+model= lm(isINFP ~ uniq+avgWPS+negative+positive, subset(mbtiDF,mbtiDF$ind==1),)
+p = predict(model, subset(mbtiDF,mbtiDF$ind!=1))
+plot(p - tested)
+model=rpart(isINFP ~ uniq+avgWPS+negative+positive, subset(mbtiDF,mbtiDF$ind==1),)
+p = predict(model, subset(mbtiDF,mbtiDF$ind!=1))
+plot(p - tested)
+#fit <- glm(isINFP~uniq+avgWPS+negative+positive,data=mbtiDF,family=binomial())
+predict(model, resDF)
+```
+There does not appear to be a strong correlation. My feeling would be that with some more statistics and complex analysis, we might be able to make a stronger connection for prediction.
 
-mbtiWC <- dfm(mbtiQ, remove = stopwords("english"), remove_punct = TRUE)
-set.seed(100)
-textplot_wordcloud(mbtiWC, min.freq = 6, random.order = FALSE,
-                   rot.per = .25, 
-                   colors = RColorBrewer::brewer.pal(8,"Dark2"))
+#Visualization
+Given that we were unable to create a statistical connection between the two, we can visualize some of the differences by looking at sentiment breakdown (positive vs. negative) for the different types, as well as review scores.
+```{r}
+mbtiPlotted = ggplot(mbtiPlot, mapping = aes(x = type, fill = term)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'MBTI Type') +
+  scale_fill_discrete(name="Word Sentiment") +
+  theme_few()
+
+resPlotted = ggplot(resPlot, mapping = aes(x = rating, fill = term)) +
+  geom_bar(stat='count', position='fill') +
+  labs(x = 'Rating Score') +
+  scale_fill_discrete(name="Word Sentiment") +
+  theme_few()
+
+multiplot(mbtiPlotted,resPlotted)
+```
+
+#mbtiWC <- dfm(mbtiQ, remove = stopwords("english"), remove_punct = TRUE)
+#set.seed(100)
+#textplot_wordcloud(mbtiWC, min.freq = 6, random.order = FALSE,
+#                   rot.per = .25, 
+#                   colors = RColorBrewer::brewer.pal(8,"Dark2"))
