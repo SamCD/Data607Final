@@ -1,5 +1,5 @@
 library(ggplot2) # Data visualization
-library(readr) # CSV file I/O, e.g. the read_csv function
+library(readr)
 library(tidyr)
 library(dplyr)
 library(stringr)
@@ -8,6 +8,7 @@ library("googleway")
 library(RCurl)
 library("quanteda") 
 library(tidytext)
+library(plyr)
 
 link <- getURL('https://raw.githubusercontent.com/SamCD/Data607Final/master/mbti_1.csv')
 mbti <- read.csv(text = link)
@@ -15,58 +16,82 @@ mbti <- mbti %>%
   mutate(posts = strsplit(as.character(posts), "[|||]")) %>% 
   unnest(posts)
 mbti <- mbti[!(is.na(mbti$posts) | mbti$posts==""), ]
-#head(mbti)
 mbti$isURL <- grepl('$http',mbti$posts,TRUE)
+mbti <- subset(mbti,mbti$isURL == 0)
 
 #entp <- VCorpus(VectorSource(subset(mbti,mbti$type=='ENTP' | mbti$isURL==0)$posts))
-entpQ <- corpus(subset(mbti,mbti$type=='ENTP' | mbti$isURL==0)$posts)
-summary(entpQ)
-entpDF <- tidy(entpQ)
-add_column(entpDF,tok = ntoken(entpDF$text))
-entpDF$ntok <- ntoken(entpDF$text)
-entpDF$ntyp <- ntype(entpDF$text)
-entpDF$uniq <- 100.0 / (entpDF$ntok/entpDF$ntyp)
-entpDF$avgWPS <- entpDF$ntok / nsentence(entpDF$text)
-entpDF <- data.frame(entpDF)
+mbtiQ <- corpus(mbti,text_field = "posts")
+mbtiDF <- tidy(mbtiQ)
+mbtiDF$ntok <- ntoken(mbtiDF$text)
+mbtiDF$ntyp <- ntype(mbtiDF$text)
+mbtiDF$uniq <- 100.0 / (mbtiDF$ntok/mbtiDF$ntyp)
+mbtiDF$avgWPS <- mbtiDF$ntok / nsentence(mbtiDF$text)
+mbtiDF <- tibble::rowid_to_column(mbti, "ID")
 
-entpDFM <- dfm(entpQ,remove = c(stopwords("english"),"'"))
-entpDF <- data.frame(tidy(entpDFM))
-head(entpDF)
-
-summary(entpQ)
-entpQ[1]
-ntoken(char_tolower(entpQ[1]))
-ntype(char_tolower(entpQ[1]))
-entpQ[["Uniqueness"]] <- 100.0 / (ntoken(char_tolower(texts(entpQ))) / ntype(char_tolower(texts(entpQ))))
-docvars(entpQ)
-
-
-#entp <- tm_map(entp, content_transformer(tolower))
-entp <- tm_map(entp, removeNumbers)
-entp <- tm_map(entp, removeWords, stopwords("english"))
-entpDF <- data.frame(text=unlist(sapply(entp, `[`, "content")), stringsAsFactors=F)
+#sentiment analysis
+mbtiS <- dfm(mbtiQ, dictionary = data_dictionary_LSD2015)
+mbtiS <- tidy(mbtiS)
+mbtiS <- mutate(mbtiS, ID = as.numeric(rownames(mbtiS)))
+mbtiN <- subset(mbtiS,mbtiS$term=="negative")
+mbtiN$document <- as.integer(mbtiN$document)
+head(mbtiDF)
+head(mbtiN)
+mbtiDF <- inner_join(mbtiDF,mbtiN,by = c("ID" = "document"))[c("ID","type","posts","count")]
+names(mbtiDF)[names(mbtiDF) == 'count'] <- 'negative'
+mbtiP <- subset(mbtiS,mbtiS$term=="positive")
+mbtiP$document <- as.integer(mbtiP$document)
+mbtiDF <- inner_join(mbtiDF,mbtiP,by = c("ID" = "document"))[c("ID","type","posts","negative","count")]
+names(mbtiDF)[names(mbtiDF) == 'count'] <- 'positive'
+mbtiDF <- data.frame(mbtiDF)
 
 link2 <- getURL("https://raw.githubusercontent.com/SamCD/Data607Final/master/Starbucks.csv")
 samples <- read.csv(text = link2,header = FALSE)
-
-resDF <- data.frame(rating = as.numeric(character()),text = character())
-x <- 500
-while(x>0) {
-lat <- as.numeric(format(round(runif(1,-90,90), 3), nsmall = 3))
-lon <- as.numeric(format(round(runif(1,-180,180), 3), nsmall = 3))
-rad <- as.numeric(format(round(runif(1,1,5000), 0), nsmall = 0))
 key <- 'AIzaSyAq8j_r8PZJE2rtNTGjE4HbfMZbm7Njbxc'
-res <- google_places(location = c(lat, lon),
-                     keyword = "Restaurant",
-                     radius = rad,
-                     key = key)
-head(res)
-for (i in res$results$place_id){
-  revs <- google_place_details(i,key=key)$result$reviews[,c("rating","text")]
-  resDF <- rbind(resDF,revs)
-}
-x <- x - 1
-print(x)
+resDF <- data.frame(rating = as.numeric(character()),text = character())
+samples <- samples[sample(nrow(samples)),]
+for (row in 1:nrow(head(samples),10)) {
+  lat <- samples[row,2]
+  lon <- samples[row,1]
+  res <- google_places(location = c(lat, lon),
+                       keyword = "Restaurant",
+                       radius = 5000,
+                       key = key)
+  for (i in res$results$place_id){
+    revs <- google_place_details(i,key=key)$result$reviews[,c("rating","text")]
+    resDF <- rbind(resDF,revs)
+  }
 }
 
-head(resDF,100)
+#head(resDF,15)
+resQ <- corpus(resDF,text_field = "text")
+resDF <- tidy(resQ)
+resDF$ntok <- ntoken(resDF$text)
+resDF$ntyp <- ntype(resDF$text)
+resDF$uniq <- 100.0 / (resDF$ntok/resDF$ntyp)
+resDF$avgWPS <- resDF$ntok / nsentence(resDF$text)
+resDF <- tibble::rowid_to_column(resDF, "ID")
+#sentiment analysis
+resS <- dfm(resQ, dictionary = data_dictionary_LSD2015)
+resS <- tidy(resS)
+resS <- mutate(resS, ID = as.numeric(rownames(resS)))
+resN <- subset(resS,resS$term=="negative")
+resN$document <- as.integer(resN$document)
+resDF <- inner_join(resDF,resN,by = c("ID" = "document"))[c("ID","rating","text","count")]
+names(resDF)[names(resDF) == 'count'] <- 'negative'
+resP <- subset(resS,resS$term=="positive")
+resP$document <- as.integer(resP$document)
+resDF <- inner_join(resDF,resP,by = c("ID" = "document"))[c("ID","rating","text","negative","count")]
+names(resDF)[names(resDF) == 'count'] <- 'positive'
+resDF <- data.frame(resDF)
+
+count(mbtiDF,"type")
+mbtiDF$isINFP <- (mbti$type=="INFP")
+
+fit <- glm(isINFP~uniq+avgWPS+negative+positive,data=mbtiDF,family=binomial())
+predict(fit, resDF,type="response")
+
+mbtiWC <- dfm(mbtiQ, remove = stopwords("english"), remove_punct = TRUE)
+set.seed(100)
+textplot_wordcloud(mbtiWC, min.freq = 6, random.order = FALSE,
+                   rot.per = .25, 
+                   colors = RColorBrewer::brewer.pal(8,"Dark2"))
