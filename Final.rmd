@@ -1,4 +1,4 @@
-#Loading required packages
+# Loading required packages
 ```{r}
 library(ggplot2) # Data visualization
 library(readr)
@@ -14,7 +14,8 @@ library(plyr)
 library(rpart)
 ```
 
-#Acquiring and Preparing Data
+# Acquiring and Preparing Data
+
 The first data set was pulled from Kaggle and committed to my GitHub workspace for use within this project. It is a listing of journal entries by each of the 16 different Meyers-Briggs personality types. Here I will pull the data into the workspace, separate each row into individual entries, clear out blank entries and any entries containing URLs, as we only want to do text analysis.
 ```{r}
 link <- getURL('https://raw.githubusercontent.com/SamCD/Data607Final/master/mbti_1.csv')
@@ -28,11 +29,13 @@ mbti <- subset(mbti,mbti$isURL == 0)
 ```
 
 Next is a manually created data set using the Google Places API. Using this tool, I will create a table consisting of review scores and text. As I only am interested in random text, I seeded the searches using a CSV listing Starbucks locations around the US, for which I randomized the order, and searched for the word "Restaurant" nearby.
+
 ```{r}
 link2 <- getURL("https://raw.githubusercontent.com/SamCD/Data607Final/master/Starbucks.csv")
 samples <- read.csv(text = link2,header = FALSE)
 ```
 *Google API Key hidden*
+
 ```{r,echo=FALSE}
 key <- 'AIzaSyAq8j_r8PZJE2rtNTGjE4HbfMZbm7Njbxc'
 ```
@@ -54,7 +57,8 @@ for (row in 1:nrow(head(samples),10)) {
 }
 ```
 
-#Creating corpi
+# Creating corpi
+
 Using the ```quanteda``` package in R to create corpi and word usage matrices. I created some statistics for each entry as well, including "uniqueness" (by comparing the distinct tokens to the total number of tokens) and average sentence length.
 ```{r}
 mbtiQ <- corpus(mbti,text_field = "posts")
@@ -74,7 +78,8 @@ resDF$avgWPS <- resDF$ntok / nsentence(resDF$text)
 resDF <- tibble::rowid_to_column(resDF, "ID")
 ```
 
-#Performing sentiment analysis
+# Performing sentiment analysis
+
 Quanteda has built-in dictionaries which can be used to perform sentiment analysis. I used the most simple one, splitting words into either positive or negative.
 ```{r}
 mbtiS <- dfm(mbtiQ, dictionary = data_dictionary_LSD2015)
@@ -106,7 +111,8 @@ names(resDF)[names(resDF) == 'count'] <- 'positive'
 resDF <- data.frame(resDF)
 ```
 
-#Predictive modeling
+# Predictive modeling
+
 Instead of doing a complex analysis to determine the MBTI type, I am simplifying the classification into a boolean field, comparing the most common type (INFP) to non-INFP
 ```{r}
 count(mbtiDF,"type")
@@ -127,7 +133,8 @@ predict(model, resDF)
 ```
 There does not appear to be a strong correlation. My feeling would be that with some more statistics and complex analysis, we might be able to make a stronger connection for prediction.
 
-#Visualization
+# Visualization
+
 Given that we were unable to create a statistical connection between the two, we can visualize some of the differences by looking at sentiment breakdown (positive vs. negative) for the different types, as well as review scores.
 ```{r}
 mbtiPlotted = ggplot(mbtiPlot, mapping = aes(x = type, fill = term)) +
@@ -144,9 +151,3 @@ resPlotted = ggplot(resPlot, mapping = aes(x = rating, fill = term)) +
 
 multiplot(mbtiPlotted,resPlotted)
 ```
-
-#mbtiWC <- dfm(mbtiQ, remove = stopwords("english"), remove_punct = TRUE)
-#set.seed(100)
-#textplot_wordcloud(mbtiWC, min.freq = 6, random.order = FALSE,
-#                   rot.per = .25, 
-#                   colors = RColorBrewer::brewer.pal(8,"Dark2"))
