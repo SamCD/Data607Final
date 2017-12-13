@@ -1,7 +1,7 @@
 ---
 title: "Data 607 Final Project"
 author: "Sam CD"
-date: "December 11, 2017"
+date: "December 10, 2017"
 output: html_document
 ---
 
@@ -10,8 +10,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Loading required packages
-```{r}
-library(ggplot2) # Data visualization
+```{r results='hide', message=FALSE, warning=FALSE}
+library(ggplot2)
+library("ggmap")
+library(plyr)
 library(readr)
 library(tidyr)
 library(dplyr)
@@ -21,13 +23,12 @@ library("googleway")
 library(RCurl)
 library("quanteda") 
 library(tidytext)
-library(plyr)
 library(randomForest)
 ```
 
 # Acquiring and Preparing Data
 
-The first data set was pulled from Kaggle and committed to my GitHub workspace for use within this project. It is a listing of journal entries by each of the 16 different Meyers-Briggs personality types. Here I will pull the data into the workspace, separate each row into individual entries, clear out blank entries and any entries containing URLs, as we only want to do text analysis. Then, in order to simplify the analysis, I narrow down to introvert vs. extrovert.
+The first data set was pulled from Kaggle and committed to my GitHub workspace for use within this project (<https://www.kaggle.com/datasnaek/mbti-type>). It is a listing of journal entries by each of the 16 different Meyers-Briggs personality types. Here I will pull the data into the workspace, separate each row into individual entries, clear out blank entries and any entries containing URLs, as we only want to do text analysis. Then, in order to simplify the analysis, I narrow down to introvert vs. extrovert.
 ```{r}
 link <- getURL('https://raw.githubusercontent.com/SamCD/Data607Final/master/mbti_1.csv')
 mbti <- read.csv(text = link)
@@ -40,7 +41,7 @@ mbti <- subset(mbti,mbti$isURL == 0)
 mbti$type <- strtrim(mbti$type,1)
 ```
 
-Next is a manually created data set using the Google Places API. Using this tool, I will create a table consisting of review scores and text. As I only am interested in random text, I seeded the searches using a CSV listing Starbucks locations around the US, for which I randomized the order, and searched for the word "Restaurant" nearby.
+Next is a manually created data set using the Google Places API. Using this tool, I will create a table consisting of review scores and text. As I only am interested in random text, I seeded the searches using a CSV listing Starbucks locations around the US (found via Google search; *source* <http://www.gpspassion.com/forumsen/topic.asp?TOPIC_ID=67416>), for which I randomized the order, and searched for the word "Restaurant" nearby.
 
 ```{r}
 link2 <- getURL("https://raw.githubusercontent.com/SamCD/Data607Final/master/Starbucks.csv")
@@ -49,13 +50,13 @@ samples <- read.csv(text = link2,header = FALSE)
 *Google API Key hidden*
 
 ```{r,echo=FALSE}
-key <- 'AIzaSyAq8j_r8PZJE2rtNTGjE4HbfMZbm7Njbxc'
+key <- 'AIzaSyB0iqs7nxKpvunu9yO67yUh2uKve6ABaUY'
 ```
 
 ```{r}
 resDF <- data.frame(rating = as.numeric(character()),text = character())
 samples <- samples[sample(nrow(samples)),]
-for (row in 1:10) {
+for (row in 1:20) {
   lat <- samples[row,2]
   lon <- samples[row,1]
   res <- google_places(location = c(lat, lon),
@@ -67,6 +68,15 @@ for (row in 1:10) {
     resDF <- rbind(resDF,revs)
   }
 }
+```
+
+Here is a plot of out sample locations:
+```{r}
+samples <- head(samples,10)
+usa_center = as.numeric(geocode("United States"))
+USAMap = ggmap(get_googlemap(center=usa_center, scale=2, zoom=4), extent="normal")
+USAMap +
+geom_point(aes(x=samples[,1], y=samples[,2]), data=samples, col="orange", alpha=0.4)
 ```
 
 # Creating corpi
@@ -150,7 +160,7 @@ textplot_wordcloud(entWC, min.freq = 6, random.order = FALSE,
                    colors = RColorBrewer::brewer.pal(8,"Dark2"),
                    scale=c(4,.5),
                    max.words =40)
-textplot_wordcloud(entWC, min.freq = 6, random.order = FALSE,
+textplot_wordcloud(intWC, min.freq = 6, random.order = FALSE,
                    rot.per = .25, 
                    colors = RColorBrewer::brewer.pal(8,"Dark2"),
                    scale=c(4,.5),
